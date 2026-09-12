@@ -144,6 +144,61 @@ def cmd_recall(ctx: Context, args: list[str]) -> None:
             lines.append(f"{i:>2}. #{e['id']:<4} sim={e['score']:.3f} — {preview}")
         ctx.renderer.result("similar episodes", lines)
 
+def cmd_call(ctx: Context, args: list[str]) -> None:
+    """call <tool> [key=value ...] — invoke a registered tool."""
+    if not args:
+        ctx.renderer.info("usage: call <tool> [key=value ...]")
+        return
+    name = args[0]
+    tool = ctx.tools.get(name)
+    if tool is None:
+        ctx.renderer.error(f"no such tool: {name!r}")
+        return
+
+    kwargs: dict = {}
+    for token in args[1:]:
+        if "=" not in token:
+            ctx.renderer.error(f"expected key=value, got {token!r}")
+            return
+        k, v = token.split("=", 1)
+        kwargs[k] = _coerce(v)
+
+    result = ctx.tools.execute(name, **kwargs)
+    if not result.ok:
+        ctx.renderer.error(result.error or "tool failed")
+        return
+
+    ctx.renderer.result(f"{name}", _format_value(result.value))
+
+
+def _coerce(v: str):
+    if v.lower() in ("true", "false"):
+        return v.lower() == "true"
+    if v.lower() == "none":
+        return None
+    if "," in v:
+        return [_coerce(p) for p in v.split(",")]
+    try:
+        return int(v)
+    except ValueError:
+        pass
+    try:
+        return float(v)
+    except ValueError:
+        return v
+
+
+def _format_value(value) -> list[str]:
+    if isinstance(value, dict):
+        lines = []
+        for k, v in value.items():
+            if isinstance(v, list) and len(v) > 8:
+                lines.append(f"{k}: [{len(v)} items]")
+                continue
+            lines.append(f"{k}: {v}")
+        return lines
+    return [str(value)]
+
 
 def cmd_stub(ctx: Context, name: str) -> None:
     phase = STUB_COMMANDS.get(name, "?")

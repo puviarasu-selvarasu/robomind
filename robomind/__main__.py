@@ -84,9 +84,8 @@ def main(argv: list[str] | None = None) -> int:
     # Ports
     llm = NullLLM()                # Phase 6 replaces with Ollama adapter
     voice = NullVoice()            # Phase 6.5 replaces with SAPI adapter
-    tools = ToolRegistry()
-    from .tools.memory_tool import MemoryTool
-    tools.register(MemoryTool(store))
+    tools = ToolRegistry(dry_run=bool(cfg.dry_run))
+    _register_tools(tools, store)
 
     # Dependency report
     tb = tier_b_available()
@@ -117,6 +116,28 @@ def main(argv: list[str] | None = None) -> int:
         log.info("robomind stopped cleanly")
     return 0
 
+def _register_tools(tools, store) -> None:
+    from .tools.calculator_tool import CalculatorTool
+    from .tools.cad_tool import CADTool
+    from .tools.codegen_tool import CodegenTool
+    from .tools.datasheet_tool import DatasheetTool
+    from .tools.diagnose_tool import DiagnoseTool
+    from .tools.fk_tool import FKTool
+    from .tools.ik_tool import IKTool
+    from .tools.memory_tool import MemoryTool
+    from .tools.trajectory_tool import TrajectoryTool
+    from .tools.units_tool import UnitsTool
+
+    tools.register(CalculatorTool())
+    tools.register(UnitsTool())
+    tools.register(FKTool())
+    tools.register(IKTool())
+    tools.register(TrajectoryTool())
+    tools.register(DatasheetTool())
+    tools.register(DiagnoseTool())
+    tools.register(CADTool())
+    tools.register(CodegenTool())
+    tools.register(MemoryTool(store))
 
 def _palette_to_code(name: str) -> str:
     from .ui import ansi

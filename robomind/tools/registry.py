@@ -1,12 +1,17 @@
-"""Tool registry. Name -> tool. Detects duplicates."""
+"""Tool registry. Name -> tool. Tracks dry-run state."""
 from __future__ import annotations
 
+from typing import Any
+
+from ..core.models import ToolResult
+from . import runtime
 from .base import BaseTool
 
 
 class ToolRegistry:
-    def __init__(self) -> None:
+    def __init__(self, *, dry_run: bool = False) -> None:
         self._tools: dict[str, BaseTool] = {}
+        self.dry_run = dry_run
 
     def register(self, tool: BaseTool) -> None:
         if not tool.name:
@@ -20,6 +25,9 @@ class ToolRegistry:
 
     def list(self) -> list[str]:
         return sorted(self._tools.keys())
+
+    def execute(self, _tool_name: str, **kwargs: Any) -> ToolResult:
+        return runtime.execute(self, _tool_name, dry_run=self.dry_run, **kwargs)
 
     def __len__(self) -> int:
         return len(self._tools)

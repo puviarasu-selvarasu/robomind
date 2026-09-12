@@ -53,6 +53,7 @@ class RoboMindREPL(cmd.Cmd):
             "clear                   — clear screen",
             "boot                    — replay banner",
             "quit / exit             — leave the REPL",
+            "call <tool> [k=v ...]   — invoke a tool directly",
         ]
         self.ctx.renderer.result("commands", lines)
 
@@ -84,6 +85,10 @@ class RoboMindREPL(cmd.Cmd):
     def do_tools(self, arg: str) -> None:
         """tools list | tools help <name>"""
         C.cmd_tools(self.ctx, shlex.split(arg))
+
+    def do_call(self, arg: str) -> None:
+        """call <tool> [key=value ...] — invoke a registered tool."""
+        C.cmd_call(self.ctx, shlex.split(arg))
 
     def do_boot(self, arg: str) -> None:
         """Replay compact banner."""

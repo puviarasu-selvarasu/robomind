@@ -37,10 +37,8 @@ class MemoryTool(BaseTool):
     def __init__(self, store: Any) -> None:
         self.store = store
 
-    def run(self, **kwargs: Any) -> ToolResult:
-        action = kwargs.get("action")
-        step_id = kwargs.get("_step_id", "memory")
-
+    def run(self, *, step_id: str = "memory",
+            action: str = "", **kwargs: Any) -> ToolResult:
         try:
             if action == "learn":
                 return self._learn(step_id, kwargs)
