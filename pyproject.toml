@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "robomind"
+version = "0.1.0"
+description = "Offline retro-futuristic robotics AI (hardware + software engineer)"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+voice = ["pyttsx3>=2.90"]
+face  = ["Pillow>=10.0"]
+cad   = ["numpy>=1.26", "numpy-stl>=3.0", "cadquery>=2.4"]
+dev   = ["pytest>=7.4"]
+
+[project.scripts]
+robomind = "robomind.__main__:main"
+
+[tool.setuptools]
+packages = [
+    "robomind",
+    "robomind.core",
+    "robomind.domain",
+    "robomind.tools",
+    "robomind.memory",
+    "robomind.llm",
+    "robomind.ui",
+    "robomind.ui.face",
+    "robomind.ui.voice",
+    "robomind.cli",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
