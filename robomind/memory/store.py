@@ -12,6 +12,7 @@ import threading
 from pathlib import Path
 
 from ..core.models import Episode, Fact, Rule
+from ..core.confidence import decay_by_age
 
 
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
@@ -19,8 +20,6 @@ CURRENT_VERSION = 1
 
 
 class SQLiteMemoryStore:
-    """Concrete MemoryStore. Satisfies robomind.core.ports.MemoryStore."""
-
     def __init__(self, db_path: Path | str):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -40,8 +39,7 @@ class SQLiteMemoryStore:
         return conn
 
     def _migrate(self) -> None:
-        sql = SCHEMA_PATH.read_text(encoding="utf-8")
-        self._conn().executescript(sql)
+        self._conn().executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
 
     # --------------------------------------------------------------- facts
     def insert_fact(self, fact: Fact) -> int:
@@ -60,10 +58,12 @@ class SQLiteMemoryStore:
         )
         if cur.lastrowid:
             return int(cur.lastrowid)
-        row = conn.execute(
-            "SELECT id FROM facts WHERE dedupe_hash = ?", (h,)
-        ).fetchone()
+        row = conn.execute("SELECT id FROM facts WHERE dedupe_hash = ?", (h,)).fetchone()
         return int(row["id"])
+
+    def get_fact(self, fact_id: int) -> Fact | None:
+        row = self._conn().execute("SELECT * FROM facts WHERE id = ?", (fact_id,)).fetchone()
+        return _row_to_fact(row) if row else None
 
     def search_facts(self, query: str, limit: int = 10) -> list[Fact]:
         conn = self._conn()
@@ -90,14 +90,46 @@ class SQLiteMemoryStore:
             ).fetchall()
         return [_row_to_fact(r) for r in rows]
 
-    def get_fact(self, fact_id: int) -> Fact | None:
-        row = self._conn().execute(
-            "SELECT * FROM facts WHERE id = ?", (fact_id,)
-        ).fetchone()
-        return _row_to_fact(row) if row else None
+    def list_facts(self, limit: int = 100) -> list[Fact]:
+        rows = self._conn().execute(
+            "SELECT * FROM facts ORDER BY updated_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [_row_to_fact(r) for r in rows]
 
     def count_facts(self) -> int:
         return int(self._conn().execute("SELECT COUNT(*) FROM facts").fetchone()[0])
+
+    def touch_fact(self, fact_id: int) -> None:
+        self._conn().execute(
+            "UPDATE facts SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (fact_id,)
+        )
+
+    def set_fact_confidence(self, fact_id: int, confidence: float) -> None:
+        c = max(0.0, min(1.0, confidence))
+        self._conn().execute(
+            "UPDATE facts SET confidence = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (c, fact_id),
+        )
+
+    def decay_all_facts(self, factor: float = 0.99, floor: float = 0.1) -> int:
+        cur = self._conn().execute(
+            "UPDATE facts SET confidence = MAX(?, confidence * ?)", (floor, factor)
+        )
+        return cur.rowcount
+
+    def apply_age_decay(self, *, halflife_days: float = 90.0, floor: float = 0.1) -> int:
+        """Apply halflife-based decay. Returns rows affected."""
+        conn = self._conn()
+        rows = conn.execute("SELECT id, confidence, updated_at FROM facts").fetchall()
+        changed = 0
+        for r in rows:
+            new_c = decay_by_age(r["confidence"], r["updated_at"],
+                                 halflife_days=halflife_days, floor=floor)
+            if abs(new_c - r["confidence"]) > 1e-6:
+                conn.execute("UPDATE facts SET confidence = ? WHERE id = ?",
+                             (new_c, r["id"]))
+                changed += 1
+        return changed
 
     # ------------------------------------------------------------ episodes
     def insert_episode(self, ep: Episode) -> int:
@@ -112,6 +144,12 @@ class SQLiteMemoryStore:
              ep.result_json, success, ep.score, ep.duration_ms),
         )
         return int(cur.lastrowid)
+
+    def get_episode(self, ep_id: int) -> Episode | None:
+        row = self._conn().execute(
+            "SELECT * FROM episodes WHERE id = ?", (ep_id,)
+        ).fetchone()
+        return _row_to_episode(row) if row else None
 
     def search_episodes(self, query: str, limit: int = 10) -> list[Episode]:
         conn = self._conn()
@@ -133,14 +171,18 @@ class SQLiteMemoryStore:
             ).fetchall()
         return [_row_to_episode(r) for r in rows]
 
+    def list_episodes(self, limit: int = 100) -> list[Episode]:
+        rows = self._conn().execute(
+            "SELECT * FROM episodes ORDER BY created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [_row_to_episode(r) for r in rows]
+
     def count_episodes(self) -> int:
         return int(self._conn().execute("SELECT COUNT(*) FROM episodes").fetchone()[0])
 
     # --------------------------------------------------------------- rules
     def get_rule(self, name: str) -> Rule | None:
-        row = self._conn().execute(
-            "SELECT * FROM rules WHERE name = ?", (name,)
-        ).fetchone()
+        row = self._conn().execute("SELECT * FROM rules WHERE name = ?", (name,)).fetchone()
         return _row_to_rule(row) if row else None
 
     def upsert_rule(self, rule: Rule) -> int:
@@ -201,41 +243,27 @@ def _dedupe_hash(topic: str, fact: str) -> str:
 def _row_to_fact(r: sqlite3.Row) -> Fact:
     tags_raw = r["tags"] or ""
     return Fact(
-        id=r["id"],
-        topic=r["topic"],
-        fact=r["fact"],
+        id=r["id"], topic=r["topic"], fact=r["fact"],
         tags=tuple(t for t in tags_raw.split(",") if t),
         confidence=r["confidence"],
-        created_at=r["created_at"],
-        updated_at=r["updated_at"],
+        created_at=r["created_at"], updated_at=r["updated_at"],
     )
 
 
 def _row_to_episode(r: sqlite3.Row) -> Episode:
     return Episode(
-        id=r["id"],
-        input=r["input"],
-        intent=r["intent"],
-        plan_json=r["plan_json"],
-        actions_json=r["actions_json"],
+        id=r["id"], input=r["input"], intent=r["intent"],
+        plan_json=r["plan_json"], actions_json=r["actions_json"],
         result_json=r["result_json"],
         success=None if r["success"] is None else bool(r["success"]),
-        score=r["score"],
-        duration_ms=r["duration_ms"],
-        created_at=r["created_at"],
+        score=r["score"], duration_ms=r["duration_ms"], created_at=r["created_at"],
     )
 
 
 def _row_to_rule(r: sqlite3.Row) -> Rule:
     return Rule(
-        id=r["id"],
-        version=r["version"],
-        name=r["name"],
-        when=json.loads(r["when_json"]),
-        then=json.loads(r["then_json"]),
-        weight=r["weight"],
-        hits=r["hits"],
-        wins=r["wins"],
-        last_fired_at=r["last_fired_at"],
-        created_at=r["created_at"],
+        id=r["id"], version=r["version"], name=r["name"],
+        when=json.loads(r["when_json"]), then=json.loads(r["then_json"]),
+        weight=r["weight"], hits=r["hits"], wins=r["wins"],
+        last_fired_at=r["last_fired_at"], created_at=r["created_at"],
     )

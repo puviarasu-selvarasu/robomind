@@ -1,4 +1,4 @@
-"""RoboMind REPL. cmd.Cmd subclass with retro UI and stub commands."""
+"""RoboMind REPL."""
 from __future__ import annotations
 
 import cmd
@@ -16,7 +16,6 @@ class RoboMindREPL(cmd.Cmd):
         self.ctx = ctx
         self.prompt = "robomind> "
 
-    # --------------------------------------------------------- dispatch
     def default(self, line: str) -> None:
         name = line.split(maxsplit=1)[0] if line else ""
         if name in STUB_COMMANDS:
@@ -27,8 +26,9 @@ class RoboMindREPL(cmd.Cmd):
     def emptyline(self) -> None:
         pass
 
-    # --------------------------------------------------------- builtins
+    # --------------------------------------------------------------- help
     def do_help(self, arg: str) -> None:
+        """help [command] — list commands or describe one."""
         if arg:
             method = getattr(self, f"do_{arg}", None)
             if method and method.__doc__:
@@ -41,8 +41,8 @@ class RoboMindREPL(cmd.Cmd):
             "ask <text>              — ask RoboMind a robotics question      (Phase 4)",
             "ik <x> <y> [z]          — inverse kinematics                    (Phase 4)",
             "fk <angles...>          — forward kinematics                    (Phase 4)",
-            "learn <topic> | <fact>  — store a fact                          (Phase 1)",
-            "recall <query>          — search memory                         (Phase 1)",
+            "learn <topic> | <fact>  — store a fact (add #tags to tag it)",
+            "recall <query> [#tag]   — search memory",
             "datasheet <part>        — look up a component                   (Phase 4)",
             "codegen <target> <spec> — generate code                         (Phase 3)",
             "why [id|last]           — explain last decision                 (Phase 5)",
@@ -51,11 +51,12 @@ class RoboMindREPL(cmd.Cmd):
             "tools list              — list registered tools",
             "version                 — show version",
             "clear                   — clear screen",
-            "boot                    — replay boot sequence",
+            "boot                    — replay banner",
             "quit / exit             — leave the REPL",
         ]
         self.ctx.renderer.result("commands", lines)
 
+    # ------------------------------------------------------------- builtins
     def do_quit(self, arg: str) -> bool:
         """Exit the REPL."""
         self.ctx.renderer.info("bye.")
@@ -85,5 +86,14 @@ class RoboMindREPL(cmd.Cmd):
         C.cmd_tools(self.ctx, shlex.split(arg))
 
     def do_boot(self, arg: str) -> None:
-        """Replay boot sequence (compact)."""
+        """Replay compact banner."""
         self.ctx.renderer.banner(compact=True)
+
+    # ---------------------------------------------------------- phase 1
+    def do_learn(self, arg: str) -> None:
+        """learn <topic> | <fact> [#tag ...]"""
+        C.cmd_learn(self.ctx, shlex.split(arg))
+
+    def do_recall(self, arg: str) -> None:
+        """recall <query> [#tag ...]"""
+        C.cmd_recall(self.ctx, shlex.split(arg))

@@ -84,7 +84,9 @@ def main(argv: list[str] | None = None) -> int:
     # Ports
     llm = NullLLM()                # Phase 6 replaces with Ollama adapter
     voice = NullVoice()            # Phase 6.5 replaces with SAPI adapter
-    tools = ToolRegistry()         # Phase 3 registers real tools
+    tools = ToolRegistry()
+    from .tools.memory_tool import MemoryTool
+    tools.register(MemoryTool(store))
 
     # Dependency report
     tb = tier_b_available()
